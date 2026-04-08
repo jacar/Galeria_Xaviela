@@ -1,0 +1,33 @@
+@import "tailwindcss";
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .instagram-border {
+    position: relative;
+    padding: 3px;
+    border-radius: 9999px;
+    background: linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%);
+    animation: rotate-gradient 3s linear infinite;
+    background-size: 200% 200%;
+  }
+
+  @keyframes rotate-gradient {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+}
+
+body {
+  background-color: rgb(249, 250, 251); /* bg-gray-50 */
+  color: rgb(17, 24, 39); /* text-gray-900 */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}

@@ -1,0 +1,72 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Información del perfil del usuario",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "user"] }
+      },
+      "required": ["uid", "displayName", "email"]
+    },
+    "Post": {
+      "title": "Post",
+      "description": "Una foto compartida en la fiesta",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "ID del autor" },
+        "authorName": { "type": "string" },
+        "authorPhoto": { "type": "string" },
+        "imageUrl": { "type": "string", "description": "Imagen en formato base64 (reducida)" },
+        "caption": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "likesCount": { "type": "number" }
+      },
+      "required": ["uid", "imageUrl", "createdAt"]
+    },
+    "Like": {
+      "title": "Like",
+      "description": "Registro de un like en un post",
+      "type": "object",
+      "properties": {
+        "postId": { "type": "string" },
+        "userId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["postId", "userId"]
+    },
+    "Follow": {
+      "title": "Follow",
+      "description": "Registro de un seguimiento entre usuarios",
+      "type": "object",
+      "properties": {
+        "followerId": { "type": "string" },
+        "followedId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["followerId", "followedId"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Perfiles de usuario"
+    },
+    "/posts/{postId}": {
+      "schema": "Post",
+      "description": "Publicaciones de la fiesta"
+    },
+    "/posts/{postId}/likes/{userId}": {
+      "schema": "Like",
+      "description": "Likes de cada publicación"
+    },
+    "/follows/{followId}": {
+      "schema": "Follow",
+      "description": "Seguimientos entre usuarios"
+    }
+  }
+}

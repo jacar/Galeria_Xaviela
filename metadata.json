@@ -1,0 +1,5 @@
+{
+  "name": "Mis 15 Años - Xaviela | Galería en Vivo",
+  "description": "Únete a la celebración de los 15 años de Xaviela. Comparte tus fotos y momentos especiales en tiempo real en nuestra galería interactiva.",
+  "requestFramePermissions": ["camera"]
+}

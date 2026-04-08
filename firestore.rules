@@ -1,0 +1,36 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Assumed Data Model (Public Access for Xaviela's Party)
+    // ===============================================================
+
+    function isValidPost(data) {
+      return data.keys().hasAll(['imageUrl', 'createdAt', 'likesCount']) &&
+             data.imageUrl is string && data.imageUrl.size() > 0 && data.imageUrl.size() < 1048576 &&
+             (!('caption' in data) || (data.caption is string && data.caption.size() < 2200)) &&
+             data.createdAt is timestamp &&
+             data.likesCount is number;
+    }
+
+    // Allow public read and create for the party duration
+    match /users/{userId} {
+      allow read, write: if true; 
+    }
+
+    match /posts/{postId} {
+      allow read, create: if true;
+      allow update: if true; // Allow likes increment
+      allow delete: if true; // Allow guests to delete their own posts (client-side filtered)
+
+      match /likes/{userId} {
+        allow read, write: if true;
+      }
+    }
+
+    match /follows/{followId} {
+      allow read, write: if true;
+    }
+  }
+}
