@@ -14,8 +14,9 @@ const XAVIELA_HIGHLIGHTS = [
 ];
 
 export default function Stories({ onHighlightClick, posts, currentUserId }: StoriesProps) {
-  const userHighlights = posts.filter(p => p.uid === currentUserId && p.isHighlight);
-
+  // Combine official highlights with dynamic ones from all users
+  const dynamicHighlights = posts.filter(p => p.isHighlight);
+  
   return (
     <div className="flex items-center gap-4 p-4 overflow-x-auto no-scrollbar bg-white border-b border-gray-200 sm:border sm:rounded-sm mb-0 sm:mb-4 max-w-[470px] mx-auto w-full">
       {/* Your Story placeholder */}
@@ -58,18 +59,18 @@ export default function Stories({ onHighlightClick, posts, currentUserId }: Stor
         </div>
       ))}
 
-      {userHighlights.map((post, i) => (
+      {dynamicHighlights.map((post) => (
         <div 
           key={post.id} 
           className="flex flex-col items-center gap-1 flex-shrink-0 cursor-pointer group"
           onClick={() => onHighlightClick(post.imageUrl)}
         >
-          <div className="p-[2.5px] rounded-full bg-pink-500 group-active:scale-95 transition-transform">
+          <div className="p-[2.5px] rounded-full bg-gradient-to-tr from-pink-500 to-yellow-500 group-active:scale-95 transition-transform">
             <div className="p-[2px] bg-white rounded-full">
               <div className="w-14 h-14 rounded-full overflow-hidden bg-gray-100 border border-gray-200">
                 <img 
                   src={post.imageUrl} 
-                  alt="Tus destacados" 
+                  alt={post.authorName} 
                   className="w-full h-full object-cover" 
                   referrerPolicy="no-referrer" 
                   loading="lazy"
@@ -78,7 +79,7 @@ export default function Stories({ onHighlightClick, posts, currentUserId }: Stor
             </div>
           </div>
           <span className="text-[11px] text-gray-900 truncate w-16 text-center font-medium">
-            Tuyo {i + 1}
+            {post.uid === currentUserId ? 'Tuyo' : post.authorName.split(' ')[0]}
           </span>
         </div>
       ))}

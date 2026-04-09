@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Heart, MessageCircle, Send, Bookmark, MoreHorizontal, Star, Trash2, Film } from 'lucide-react';
+import { Heart, MessageCircle, Send, Bookmark, MoreHorizontal, Star, Trash2, Film, ChevronLeft, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -14,6 +14,7 @@ interface PostCardProps {
 }
 
 export const PostCard: React.FC<PostCardProps> = React.memo(({ post, currentUserId, onDelete }) => {
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [isLiked, setIsLiked] = useState(false);
   const [isHighlight, setIsHighlight] = useState(post.isHighlight || false);
   const [likesCount, setLikesCount] = useState(post.likesCount);
@@ -24,7 +25,8 @@ export const PostCard: React.FC<PostCardProps> = React.memo(({ post, currentUser
     const likedPosts = JSON.parse(localStorage.getItem('liked_posts') || '[]');
     setIsLiked(likedPosts.includes(post.id));
     setLikesCount(post.likesCount);
-  }, [post.id, post.likesCount]);
+    setIsHighlight(post.isHighlight || false);
+  }, [post.id, post.likesCount, post.isHighlight]);
 
   const handleLike = async () => {
     if (!currentUserId) return;
@@ -194,25 +196,73 @@ export const PostCard: React.FC<PostCardProps> = React.memo(({ post, currentUser
 
       {/* Image */}
       <div 
-        className="relative bg-gray-50 flex items-center justify-center overflow-hidden select-none cursor-pointer" 
+        className="relative bg-gray-50 flex items-center justify-center overflow-hidden select-none cursor-pointer group" 
         onDoubleClick={handleDoubleTap}
         style={{ 
           aspectRatio: post.aspectRatio ? (post.aspectRatio < 0.8 ? '9/16' : post.aspectRatio < 1 ? '4/5' : '1/1') : '1/1',
           width: '100%'
         }}
       >
-        <img 
-          src={post.imageUrl} 
-          alt="Post content" 
-          className="w-full h-full object-cover" 
-          referrerPolicy="no-referrer" 
-          loading="lazy"
-        />
+        <AnimatePresence initial={false}>
+          <motion.img 
+            key={post.images && post.images.length > 0 ? post.images[currentImageIndex] : post.imageUrl}
+            src={post.images && post.images.length > 0 ? post.images[currentImageIndex] : post.imageUrl} 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3 }}
+            alt="Post content" 
+            className="w-full h-full object-cover" 
+            referrerPolicy="no-referrer" 
+            loading="lazy"
+          />
+        </AnimatePresence>
         
+        {post.images && post.images.length > 1 && (
+          <>
+            <div className="absolute inset-y-0 left-0 flex items-center p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setCurrentImageIndex(prev => (prev - 1 + post.images!.length) % post.images!.length);
+                }}
+                className="w-8 h-8 bg-white/80 backdrop-blur-sm rounded-full flex items-center justify-center text-gray-900 shadow-md active:scale-90 transition-transform"
+              >
+                <ChevronLeft size={20} />
+              </button>
+            </div>
+            <div className="absolute inset-y-0 right-0 flex items-center p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setCurrentImageIndex(prev => (prev + 1) % post.images!.length);
+                }}
+                className="w-8 h-8 bg-white/80 backdrop-blur-sm rounded-full flex items-center justify-center text-gray-900 shadow-md active:scale-90 transition-transform"
+              >
+                <ChevronRight size={20} />
+              </button>
+            </div>
+            <div className="absolute top-4 right-4 bg-black/50 text-white text-[10px] px-2 py-1 rounded-full backdrop-blur-sm font-medium z-10">
+              {currentImageIndex + 1}/{post.images.length}
+            </div>
+            <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-1">
+              {post.images.map((_, i) => (
+                <div 
+                  key={i} 
+                  className={cn(
+                    "w-1.5 h-1.5 rounded-full transition-all duration-300",
+                    i === currentImageIndex ? "bg-white scale-125" : "bg-white/40"
+                  )} 
+                />
+              ))}
+            </div>
+          </>
+        )}
+
         {/* Reels Icon for vertical posts */}
         {post.aspectRatio && post.aspectRatio < 0.8 && (
-          <div className="absolute top-4 right-4 text-white drop-shadow-md">
-            <Film size={24} />
+          <div className="absolute top-4 left-4 text-white drop-shadow-md z-10">
+            <Film size={20} className="opacity-80" />
           </div>
         )}
         
@@ -244,11 +294,19 @@ export const PostCard: React.FC<PostCardProps> = React.memo(({ post, currentUser
               <Send size={26} strokeWidth={2} />
             </button>
           </div>
-          <div className="flex gap-1">
-            {[1, 2, 3, 4].map(i => (
-              <div key={i} className={cn("w-1.5 h-1.5 rounded-full", i === 1 ? "bg-blue-500" : "bg-gray-300")} />
-            ))}
-          </div>
+          {post.images && post.images.length > 1 && (
+            <div className="flex gap-1.5 px-2">
+              {post.images.map((_, i) => (
+                <div 
+                  key={i} 
+                  className={cn(
+                    "w-1.5 h-1.5 rounded-full transition-all duration-300",
+                    i === currentImageIndex ? "bg-pink-500 scale-125 shadow-sm" : "bg-gray-200"
+                  )} 
+                />
+              ))}
+            </div>
+          )}
           <button className="text-gray-900">
             <Bookmark size={26} strokeWidth={2} />
           </button>
@@ -264,6 +322,13 @@ export const PostCard: React.FC<PostCardProps> = React.memo(({ post, currentUser
           <div className="text-sm leading-snug mb-1">
             <span className="font-bold mr-2 text-gray-900">{post.authorName}</span>
             <span className="text-gray-800">{post.caption}</span>
+          </div>
+        )}
+
+        {/* Timestamp */}
+        {post.createdAt && (
+          <div className="text-[10px] text-gray-400 uppercase tracking-tight mt-1 mb-2">
+            HACE {formatDistanceToNow(new Date(post.createdAt), { locale: es, addSuffix: false }).toUpperCase()}
           </div>
         )}
 

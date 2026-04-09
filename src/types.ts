@@ -18,6 +18,7 @@ export interface Post {
   isLiked?: boolean;
   isHighlight?: boolean;
   aspectRatio?: number;
+  images?: string[];
 }
 
 export interface Story {

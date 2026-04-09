@@ -9,10 +9,16 @@ import {
   doc, 
   setDoc, 
   getDoc,
+  getDocs,
   deleteDoc,
   writeBatch,
   handleFirestoreError,
   OperationType,
+  auth,
+  signInAnonymously,
+  onAuthStateChanged,
+  startAfter,
+  signOut,
 } from './lib/firebase';
 import { Post, UserProfile } from './types';
 import { seedXavielaData } from './lib/seedData';
@@ -23,7 +29,7 @@ import Slideshow from './components/Slideshow';
 import Stories from './components/Stories';
 import UploadModal from './components/UploadModal';
 import { PostSkeleton, GridSkeleton, StorySkeleton } from './components/Skeletons';
-import { Camera, Instagram, Search, Compass, PlusSquare, Home, Heart, Menu, Film, MessageCircle, Grid, LayoutList, ChevronLeft, Bell, ChevronDown, Plus, Star, Tv, X, Trash2 } from 'lucide-react';
+import { Camera, Image as ImageIcon, Instagram, Search, Compass, PlusSquare, Home, Heart, Menu, Film, MessageCircle, Grid, LayoutList, ChevronLeft, Bell, ChevronDown, Plus, Star, Tv, X, Trash2, LogOut } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
 
@@ -49,10 +55,14 @@ export default function App() {
   const [guestId, setGuestId] = useState(getGuestId());
   const [guestName, setGuestName] = useState(getGuestName());
   const [guestPhoto, setGuestPhoto] = useState(getGuestPhoto());
-  const [showNameInput, setShowNameInput] = useState(!getGuestName());
+  const [showNameInput, setShowNameInput] = useState(false); // Changed to false by default, we'll check setup in useEffect
+  const [isInitializing, setIsInitializing] = useState(true);
   const [tempName, setTempName] = useState('');
   const [tempPhoto, setTempPhoto] = useState<string | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
+  const [lastDoc, setLastDoc] = useState<any>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<'feed' | 'grid' | 'profile'>('profile');
@@ -62,6 +72,7 @@ export default function App() {
   const [selectedHighlight, setSelectedHighlight] = useState<string | null>(null);
   const [isAdminMode, setIsAdminMode] = useState(localStorage.getItem('is_admin') === 'true');
   const [showAdminLogin, setShowAdminLogin] = useState(false);
+  const [entryStep, setEntryStep] = useState<'selection' | 'guest_setup' | 'admin_login'>('selection');
   const [adminEmail, setAdminEmail] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [following, setFollowing] = useState<string[]>([]);
@@ -90,8 +101,59 @@ export default function App() {
     [viewMode, currentViewProfileId, posts]
   );
 
+  // Initialize Auth and Profile
   useEffect(() => {
-    const q = query(collection(db, 'posts'), orderBy('createdAt', 'desc'), limit(100));
+    const initAuth = async () => {
+      // 1. Sign in anonymously if no user
+      const unsubscribeAuto = onAuthStateChanged(auth, async (user) => {
+        if (user) {
+          setGuestId(user.uid);
+          localStorage.setItem('guest_id', user.uid);
+
+          // 2. Fetch profile from Firestore
+          const userDoc = await getDoc(doc(db, 'users', user.uid));
+          if (userDoc.exists()) {
+            const data = userDoc.data() as UserProfile;
+            setGuestName(data.name);
+            setGuestPhoto(data.photo || '');
+            localStorage.setItem('guest_name', data.name);
+            if (data.photo) localStorage.setItem('guest_photo', data.photo);
+            setShowNameInput(false);
+          } else {
+            // No profile found in DB, check local storage as fallback
+            const localName = localStorage.getItem('guest_name');
+            if (localName) {
+              setGuestName(localName);
+              const localPhoto = localStorage.getItem('guest_photo') || '';
+              setGuestPhoto(localPhoto);
+              setShowNameInput(false);
+              
+              // Sync local to DB for future persistence
+              await setDoc(doc(db, 'users', user.uid), {
+                uid: user.uid,
+                name: localName,
+                photo: localPhoto,
+                createdAt: serverTimestamp()
+              });
+            } else {
+              setShowNameInput(true);
+            }
+          }
+        } else {
+          // No user, sign in
+          await signInAnonymously(auth);
+        }
+        setIsInitializing(false);
+      });
+
+      return () => unsubscribeAuto();
+    };
+
+    initAuth();
+  }, []);
+
+  useEffect(() => {
+    const q = query(collection(db, 'posts'), orderBy('createdAt', 'desc'), limit(12));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       if (snapshot.empty) {
         seedXavielaData();
@@ -100,12 +162,40 @@ export default function App() {
         id: doc.id,
         ...doc.data()
       })) as Post[];
+      
       setPosts(postsData);
+      setLastDoc(snapshot.docs[snapshot.docs.length - 1]);
+      setHasMore(snapshot.docs.length === 12);
       setLoading(false);
     });
 
     return () => unsubscribe();
   }, []);
+
+  const loadMorePosts = async () => {
+    if (!lastDoc || !hasMore) return;
+    
+    const q = query(
+      collection(db, 'posts'), 
+      orderBy('createdAt', 'desc'), 
+      startAfter(lastDoc), 
+      limit(12)
+    );
+    
+    try {
+      const snapshot = await getDocs(q);
+      const newPosts = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Post[];
+      
+      setPosts(prev => [...prev, ...newPosts]);
+      setLastDoc(snapshot.docs[snapshot.docs.length - 1]);
+      setHasMore(snapshot.docs.length === 12);
+    } catch (error) {
+      console.error("Error loading more posts:", error);
+    }
+  };
 
   useEffect(() => {
     const q = query(collection(db, 'follows'));
@@ -152,9 +242,11 @@ export default function App() {
     }
   };
 
-  const handleSaveName = () => {
+  const handleSaveName = async () => {
     if (tempName.trim()) {
       const name = tempName.trim();
+      const uid = auth.currentUser?.uid || guestId;
+
       localStorage.setItem('guest_name', name);
       if (tempPhoto) {
         localStorage.setItem('guest_photo', tempPhoto);
@@ -162,6 +254,18 @@ export default function App() {
       }
       setGuestName(name);
       setShowNameInput(false);
+
+      // Persist in Firestore for robustness
+      try {
+        await setDoc(doc(db, 'users', uid), {
+          uid: uid,
+          name: name,
+          photo: tempPhoto || '',
+          createdAt: serverTimestamp()
+        });
+      } catch (err) {
+        console.error('Error saving user profile to Firestore:', err);
+      }
     }
   };
 
@@ -230,15 +334,35 @@ export default function App() {
     }
   };
 
-  const handleLogoutAdmin = () => {
-    setIsAdminMode(false);
-    localStorage.removeItem('is_admin');
-    const newId = `guest_${Math.random().toString(36).substr(2, 9)}`;
-    localStorage.setItem('guest_id', newId);
-    setGuestId(newId);
-    setGuestName('');
-    localStorage.removeItem('guest_name');
-    alert('Sesión de administrador cerrada');
+  const handleLogout = async () => {
+    try {
+      if (isAdminMode) {
+        setIsAdminMode(false);
+        localStorage.removeItem('is_admin');
+        alert('Sesión de administrador cerrada');
+      }
+
+      // Clear Guest data
+      localStorage.removeItem('guest_id');
+      localStorage.removeItem('guest_name');
+      localStorage.removeItem('guest_photo');
+      localStorage.removeItem('liked_posts');
+
+      // Firebase Sign Out
+      await signOut(auth);
+
+      // Reset App State
+      setGuestId(null);
+      setGuestName('');
+      setGuestPhoto('');
+      setEntryStep('selection');
+      setShowNameInput(true);
+      
+      // Force refresh or just reset UI
+      window.location.reload(); 
+    } catch (error) {
+      console.error("Error signing out:", error);
+    }
   };
 
   const handleResetDatabase = async () => {
@@ -267,6 +391,14 @@ export default function App() {
       handleFirestoreError(error, OperationType.DELETE, `posts/${id}`);
     }
   };
+  if (isInitializing) {
+    return (
+      <div className="fixed inset-0 bg-white flex flex-col items-center justify-center p-8 space-y-4">
+        <div className="w-16 h-16 border-4 border-pink-100 border-t-pink-500 rounded-full animate-spin"></div>
+        <p className="text-pink-600 font-serif italic text-xl animate-pulse">Xaviela's Party...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-white sm:bg-gray-50 flex flex-col lg:flex-row">
@@ -346,7 +478,7 @@ export default function App() {
           {isAdminMode ? (
             <div className="space-y-2">
               <button 
-                onClick={handleLogoutAdmin}
+                onClick={handleLogout}
                 className="flex items-center gap-4 w-full p-3 rounded-lg hover:bg-red-50 transition-colors text-red-600 font-bold"
               >
                 <X size={24} />
@@ -369,6 +501,14 @@ export default function App() {
               <span>Acceso Anfitrión</span>
             </button>
           )}
+
+          <button 
+            onClick={handleLogout}
+            className="flex items-center gap-4 w-full p-3 rounded-lg hover:bg-red-50 transition-colors text-red-500 mt-4 border-t border-gray-100 pt-4"
+          >
+            <LogOut size={24} />
+            <span className="font-medium text-sm">Cerrar Sesión</span>
+          </button>
 
           <button 
             onClick={() => {
@@ -583,10 +723,19 @@ export default function App() {
                   )}
                   {isAdminMode && (
                     <button 
-                      onClick={handleLogoutAdmin}
+                      onClick={handleLogout}
                       className="flex-1 bg-red-50 text-red-600 py-1.5 rounded-md text-sm font-bold border border-red-100"
                     >
                       Cerrar Admin
+                    </button>
+                  )}
+                  {currentViewProfileId === guestId && !isAdminMode && (
+                    <button 
+                      onClick={handleLogout}
+                      className="flex items-center justify-center bg-gray-50 text-gray-500 px-3 py-1.5 rounded-md text-sm font-semibold hover:bg-gray-100 transition-colors"
+                      title="Cerrar sesión"
+                    >
+                      <LogOut size={18} />
                     </button>
                   )}
                   <button className="bg-pink-50 text-pink-600 px-2 py-1.5 rounded-md text-sm font-semibold hover:bg-pink-100 transition-colors">
@@ -601,17 +750,18 @@ export default function App() {
                       { label: 'Nuevo', icon: <Plus size={24} /> },
                       { label: 'Preparativos', img: 'https://webcincodev.com/xaviela/galeria/1.png' },
                       { label: 'Sesión', img: 'https://webcincodev.com/xaviela/galeria/5.png' },
-                      { label: 'Fiesta', img: 'https://webcincodev.com/xaviela/galeria/10.png' }
+                      { label: 'Fiesta', img: 'https://webcincodev.com/xaviela/galeria/10.png' },
+                      ...highlightPosts.map((p, i) => ({ label: `Extra ${i + 1}`, img: p.imageUrl }))
                     ].map((h, i) => (
                       <div 
-                        key={i} 
+                        key={`xav-${i}`} 
                         className="flex flex-col items-center gap-1 shrink-0 cursor-pointer group"
                         onClick={() => {
-                          if (h.img) {
-                            setSelectedHighlight(h.img);
-                          } else {
+                          if (h.label === 'Nuevo') {
                             setIsUploadingHighlight(true);
                             setIsUploadOpen(true);
+                          } else if (h.img) {
+                            setSelectedHighlight(h.img);
                           }
                         }}
                       >
@@ -705,14 +855,25 @@ export default function App() {
                 )
               ) : filteredPosts.length > 0 ? (
                 viewMode === 'feed' ? (
-                  filteredPosts.map(post => (
-                    <PostCard 
-                      key={post.id} 
-                      post={post} 
-                      currentUserId={guestId} 
-                      onDelete={isAdminMode ? handleDeletePost : undefined}
-                    />
-                  ))
+                  <>
+                    {filteredPosts.map(post => (
+                      <PostCard 
+                        key={post.id} 
+                        post={post} 
+                        currentUserId={guestId} 
+                        onDelete={isAdminMode ? handleDeletePost : undefined}
+                      />
+                    ))}
+                    {hasMore && (
+                      <button 
+                        onClick={loadMorePosts}
+                        disabled={isLoadingMore}
+                        className="w-full py-4 text-pink-500 font-bold hover:bg-pink-50 transition-colors uppercase tracking-widest text-[10px] border-y border-gray-100 mb-8 disabled:opacity-50"
+                      >
+                        {isLoadingMore ? 'Cargando...' : 'Ver más publicaciones'}
+                      </button>
+                    )}
+                  </>
                 ) : (
                   <div className="p-[1px]">
                     <PostGrid 
@@ -723,6 +884,15 @@ export default function App() {
                       }} 
                       onDelete={isAdminMode ? handleDeletePost : undefined}
                     />
+                    {hasMore && (
+                      <button 
+                        onClick={loadMorePosts}
+                        disabled={isLoadingMore}
+                        className="w-full py-4 text-pink-500 font-bold hover:bg-pink-50 transition-colors uppercase tracking-widest text-[10px] border-y border-gray-100 my-4 disabled:opacity-50"
+                      >
+                        {isLoadingMore ? 'Cargando...' : 'Ver más publicaciones'}
+                      </button>
+                    )}
                   </div>
                 )
               ) : (
@@ -966,78 +1136,129 @@ export default function App() {
                   />
                 </div>
                 <h1 className="text-3xl font-bold tracking-tight text-pink-600 font-serif italic">Xaviela's Party</h1>
-                <p className="text-gray-500 text-sm">
-                  ¡Bienvenido a mis 15 años! ✨<br />
-                  Personaliza tu perfil para la fiesta.
-                </p>
               </div>
 
-              <div className="space-y-4">
-                <div className="flex flex-col items-center gap-3">
-                  <div 
-                    className="w-24 h-24 rounded-full bg-gray-100 border-2 border-dashed border-gray-300 flex flex-col items-center justify-center overflow-hidden group hover:border-pink-400 transition-colors relative"
-                  >
-                    {tempPhoto ? (
-                      <img src={tempPhoto} className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="flex flex-col items-center gap-1">
-                        <Camera size={24} className="text-gray-400" />
-                        <span className="text-[10px] text-gray-400">Tu Foto</span>
+              {entryStep === 'selection' && (
+                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                  <div className="space-y-2">
+                    <p className="text-gray-900 font-semibold">¡Bienvenido a mis 15 años! ✨</p>
+                    <p className="text-gray-500 text-sm italic">Elige cómo quieres participar:</p>
+                  </div>
+
+                  <div className="space-y-3">
+                    <button 
+                      onClick={() => setEntryStep('guest_setup')}
+                      className="w-full py-4 bg-pink-500 text-white rounded-2xl font-bold text-lg shadow-lg shadow-pink-100 flex items-center justify-center gap-3 active:scale-95 transition-all"
+                    >
+                      <Star className="fill-white" size={20} />
+                      Soy Invitado
+                    </button>
+
+                    <div className="relative py-2">
+                      <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-100"></div></div>
+                      <div className="relative flex justify-center text-[10px] uppercase tracking-widest"><span className="bg-white px-2 text-gray-400">Acceso Privado</span></div>
+                    </div>
+
+                    <button 
+                      onClick={() => setEntryStep('admin_login')}
+                      className="w-full py-2 bg-gray-50 text-gray-500 rounded-lg font-medium text-xs hover:bg-gray-100 transition-colors"
+                    >
+                      Soy Anfitrión
+                    </button>
+                  </div>
+
+                  <div className="bg-amber-50 border border-amber-100 p-4 rounded-xl space-y-1">
+                    <p className="text-amber-800 text-[10px] font-bold uppercase tracking-wider">Aviso para Invitados</p>
+                    <p className="text-amber-700 text-[11px] leading-relaxed">
+                      Si eres un invitado, por favor elige "Soy Invitado". La opción de anfitrión requiere clave.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {entryStep === 'guest_setup' && (
+                <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-500">
+                  <div className="space-y-4">
+                    <div className="flex flex-col items-center gap-3">
+                      <div 
+                        className="w-24 h-24 rounded-full bg-gray-100 border-2 border-dashed border-gray-300 flex flex-col items-center justify-center overflow-hidden relative"
+                      >
+                        {tempPhoto ? (
+                          <img src={tempPhoto} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="flex flex-col items-center gap-1">
+                            <Camera size={24} className="text-gray-400" />
+                            <span className="text-[10px] text-gray-400">Tu Foto</span>
+                          </div>
+                        )}
                       </div>
-                    )}
+                      
+                      <div className="flex gap-2 w-full">
+                        <button onClick={() => cameraInputRef.current?.click()} className="flex-1 py-1.5 bg-gray-900 text-white rounded-lg text-[10px] font-bold flex items-center justify-center gap-2 transition-transform active:scale-95">
+                          <Camera size={12} /> Cámara
+                        </button>
+                        <button onClick={() => galleryInputRef.current?.click()} className="flex-1 py-1.5 bg-white border border-gray-200 text-gray-900 rounded-lg text-[10px] font-bold flex items-center justify-center gap-2 transition-transform active:scale-95">
+                          <ImageIcon size={12} className="text-pink-500" /> Galería
+                        </button>
+                      </div>
+
+                      <input type="file" accept="image/*" capture="environment" className="hidden" ref={cameraInputRef} onChange={handlePhotoChange} />
+                      <input type="file" accept="image/*" className="hidden" ref={galleryInputRef} onChange={handlePhotoChange} />
+                    </div>
+
+                    <input
+                      type="text"
+                      placeholder="Tu nombre o apodo"
+                      value={tempName}
+                      onChange={(e) => setTempName(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSaveName()}
+                      className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-pink-500 outline-none transition-all text-center font-medium"
+                    />
+                    
+                    <div className="space-y-3">
+                      <button
+                        onClick={handleSaveName}
+                        disabled={!tempName.trim()}
+                        className="w-full py-3.5 bg-pink-500 text-white rounded-2xl font-bold shadow-lg shadow-pink-100 flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-50"
+                      >
+                        Entrar a la fiesta
+                      </button>
+                      <button onClick={() => setEntryStep('selection')} className="text-gray-400 text-[10px] hover:underline">Volver atrás</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {entryStep === 'admin_login' && (
+                <div className="space-y-5 animate-in fade-in slide-in-from-left-4 duration-500">
+                  <div className="text-left space-y-3">
+                    <input
+                      type="email"
+                      placeholder="Email de anfitrión"
+                      value={adminEmail}
+                      onChange={(e) => setAdminEmail(e.target.value)}
+                      className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-pink-500 outline-none transition-all"
+                    />
+                    <input
+                      type="password"
+                      placeholder="Contrasena"
+                      value={adminPassword}
+                      onChange={(e) => setAdminPassword(e.target.value)}
+                      className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-pink-500 outline-none transition-all"
+                    />
                   </div>
                   
-                  <div className="flex gap-2 w-full">
-                    <button 
-                      onClick={() => cameraInputRef.current?.click()}
-                      className="flex-1 py-2 bg-gray-900 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-2 active:scale-95 transition-transform"
+                  <div className="space-y-3">
+                    <button
+                      onClick={handleAdminLogin}
+                      className="w-full py-3 bg-gray-900 text-white rounded-xl font-bold shadow-lg active:scale-95 transition-all"
                     >
-                      <Camera size={14} />
-                      Cámara
+                      Iniciar Sesión
                     </button>
-                    <button 
-                      onClick={() => galleryInputRef.current?.click()}
-                      className="flex-1 py-2 bg-white border border-gray-200 text-gray-900 rounded-lg text-xs font-bold flex items-center justify-center gap-2 active:scale-95 transition-transform"
-                    >
-                      <Star size={14} className="text-pink-500" />
-                      Galería
-                    </button>
+                    <button onClick={() => setEntryStep('selection')} className="text-gray-400 text-[10px] hover:underline">Volver atrás</button>
                   </div>
-
-                  <input 
-                    type="file" 
-                    accept="image/*" 
-                    capture="environment"
-                    className="hidden" 
-                    ref={cameraInputRef}
-                    onChange={handlePhotoChange}
-                  />
-                  <input 
-                    type="file" 
-                    accept="image/*" 
-                    className="hidden" 
-                    ref={galleryInputRef}
-                    onChange={handlePhotoChange}
-                  />
                 </div>
-
-                <input
-                  type="text"
-                  placeholder="Tu nombre o apodo"
-                  value={tempName}
-                  onChange={(e) => setTempName(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleSaveName()}
-                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-transparent outline-none transition-all text-center font-medium"
-                  autoFocus
-                />
-                <button
-                  onClick={handleSaveName}
-                  disabled={!tempName.trim()}
-                  className="w-full py-3 bg-pink-500 text-white rounded-xl font-bold shadow-lg shadow-pink-200 active:scale-95 transition-all disabled:opacity-50"
-                >
-                  Entrar a la fiesta
-                </button>
-              </div>
+              )}
             </motion.div>
           </motion.div>
         )}

@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { X, Camera, Image as ImageIcon } from 'lucide-react';
+import { X, Camera, Image as ImageIcon, ChevronLeft, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { db, collection, addDoc, serverTimestamp, OperationType, handleFirestoreError } from '../lib/firebase';
 
@@ -11,7 +11,8 @@ interface UploadModalProps {
 }
 
 export default function UploadModal({ isOpen, onClose, onSuccess, initialIsHighlight = false }: UploadModalProps) {
-  const [image, setImage] = useState<string | null>(null);
+  const [images, setImages] = useState<string[]>([]);
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [aspectRatio, setAspectRatio] = useState<number | null>(null);
   const [caption, setCaption] = useState('');
   const [guestName, setGuestName] = useState(localStorage.getItem('guest_name') || '');
@@ -68,29 +69,47 @@ export default function UploadModal({ isOpen, onClose, onSuccess, initialIsHighl
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
+    const files = Array.from(e.target.files || []);
+    if (files.length > 0) {
       setError(null);
+      setIsUploading(true);
       try {
-        const { dataUrl, aspectRatio: ar } = await resizeImage(file);
-        setImage(dataUrl);
-        setAspectRatio(ar);
+        const limitedFiles = files.slice(0, 5);
+        if (files.length > 5) {
+          setError('Máximo 5 fotos permitidas. Se han seleccionado las primeras 5.');
+        }
+
+        const processedImages: string[] = [];
+        let firstAR: number | null = null;
+
+        for (let i = 0; i < limitedFiles.length; i++) {
+          const { dataUrl, aspectRatio: ar } = await resizeImage(limitedFiles[i]);
+          processedImages.push(dataUrl);
+          if (i === 0) firstAR = ar;
+        }
+
+        setImages(processedImages);
+        setAspectRatio(firstAR);
+        setCurrentImageIndex(0);
       } catch (err) {
-        console.error('Error resizing image:', err);
-        setError('No se pudo procesar la imagen. Intenta con otra.');
+        console.error('Error processing images:', err);
+        setError('No se pudieron procesar las imágenes. Intenta con otras.');
+      } finally {
+        setIsUploading(false);
       }
     }
   };
 
   const handleUpload = async () => {
-    if (!image) return;
+    if (images.length === 0) return;
 
     setIsUploading(true);
     setError(null);
     
-    // Check image size (base64 length is approx 4/3 of byte size)
-    if (image.length > 1048576 * 1.3) {
-      setError('La imagen es demasiado grande. Intenta con otra o reduce su calidad.');
+    // Check total size or just skip if resizing is handled
+    const totalSize = images.reduce((acc, img) => acc + img.length, 0);
+    if (totalSize > 1048576 * 5) { // 5MB approx
+      setError('Las imágenes en conjunto son demasiado grandes. Intenta con menos o reduce su calidad.');
       setIsUploading(false);
       return;
     }
@@ -102,7 +121,8 @@ export default function UploadModal({ isOpen, onClose, onSuccess, initialIsHighl
         uid: guestId,
         authorName: guestName.trim() || 'Invitado Especial',
         authorPhoto: guestPhoto,
-        imageUrl: image,
+        imageUrl: images[0],
+        images,
         caption,
         isHighlight,
         aspectRatio: aspectRatio || 1,
@@ -110,9 +130,10 @@ export default function UploadModal({ isOpen, onClose, onSuccess, initialIsHighl
         likesCount: 0
       });
       // REMOVED: localStorage.setItem('guest_photo', image); // Don't overwrite profile photo on every post
-      if (onSuccess) onSuccess(image);
+      if (onSuccess) onSuccess(images[0]);
       onClose();
-      setImage(null);
+      setImages([]);
+      setCurrentImageIndex(0);
       setAspectRatio(null);
       setCaption('');
       setGuestName('');
@@ -158,7 +179,7 @@ export default function UploadModal({ isOpen, onClose, onSuccess, initialIsHighl
                   {error}
                 </div>
               )}
-              {!image ? (
+              {images.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center p-8 space-y-8">
                   <div className="space-y-2 text-center">
                     <div className="w-20 h-20 bg-pink-50 rounded-full flex items-center justify-center mx-auto text-pink-500 mb-4">
@@ -197,6 +218,7 @@ export default function UploadModal({ isOpen, onClose, onSuccess, initialIsHighl
                   <input
                     type="file"
                     accept="image/*"
+                    multiple
                     className="hidden"
                     ref={galleryInputRef}
                     onChange={handleFileChange}
@@ -204,13 +226,58 @@ export default function UploadModal({ isOpen, onClose, onSuccess, initialIsHighl
                 </div>
               ) : (
                 <div className="flex flex-col">
-                  <div className="bg-gray-100 flex items-center justify-center overflow-hidden" 
+                  <div className="bg-gray-100 relative group overflow-hidden" 
                        style={{ 
                          aspectRatio: aspectRatio ? (aspectRatio < 0.8 ? '9/16' : aspectRatio < 1 ? '4/5' : '1/1') : '1/1',
                          maxHeight: '60vh',
                          width: '100%'
                        }}>
-                    <img src={image} alt="Preview" className="w-full h-full object-contain" />
+                    <AnimatePresence mode="wait">
+                      <motion.img 
+                        key={currentImageIndex}
+                        src={images[currentImageIndex]} 
+                        initial={{ opacity: 0, x: 20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: -20 }}
+                        alt="Preview" 
+                        className="w-full h-full object-contain" 
+                      />
+                    </AnimatePresence>
+                    
+                    {images.length > 1 && (
+                      <>
+                        <div className="absolute inset-y-0 left-0 flex items-center p-2">
+                          <button 
+                            onClick={() => setCurrentImageIndex(prev => (prev - 1 + images.length) % images.length)}
+                            className="w-8 h-8 bg-white/80 backdrop-blur-sm rounded-full flex items-center justify-center text-gray-900 shadow-md"
+                          >
+                            <ChevronLeft size={20} />
+                          </button>
+                        </div>
+                        <div className="absolute inset-y-0 right-0 flex items-center p-2">
+                          <button 
+                            onClick={() => setCurrentImageIndex(prev => (prev + 1) % images.length)}
+                            className="w-8 h-8 bg-white/80 backdrop-blur-sm rounded-full flex items-center justify-center text-gray-900 shadow-md"
+                          >
+                            <ChevronRight size={20} />
+                          </button>
+                        </div>
+                        <div className="absolute top-4 right-4 bg-black/50 text-white text-[10px] px-2 py-1 rounded-full backdrop-blur-sm">
+                          {currentImageIndex + 1}/{images.length}
+                        </div>
+                        <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-1.5">
+                          {images.map((_, i) => (
+                            <div 
+                              key={i} 
+                              className={cn(
+                                "w-1.5 h-1.5 rounded-full transition-all",
+                                i === currentImageIndex ? "bg-pink-500 scale-125" : "bg-white/60"
+                              )} 
+                            />
+                          ))}
+                        </div>
+                      </>
+                    )}
                   </div>
 
                   <div className="p-4 pb-10 space-y-4">
@@ -247,8 +314,8 @@ export default function UploadModal({ isOpen, onClose, onSuccess, initialIsHighl
               )}
             </div>
 
-            {/* Footer - Only visible when image is selected */}
-            {image && (
+            {/* Footer - Only visible when images are selected */}
+            {images.length > 0 && (
               <div className="p-4 border-t border-gray-100 bg-white shrink-0">
                 <button
                   disabled={isUploading}
