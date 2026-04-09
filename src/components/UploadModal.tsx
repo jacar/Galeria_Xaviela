@@ -206,8 +206,9 @@ export default function UploadModal({ isOpen, onClose, onSuccess, initialIsHighl
                 <div className="flex flex-col">
                   <div className="bg-gray-100 flex items-center justify-center overflow-hidden" 
                        style={{ 
-                         aspectRatio: aspectRatio && aspectRatio < 0.8 ? '9/16' : '1/1',
-                         maxHeight: '60vh'
+                         aspectRatio: aspectRatio ? (aspectRatio < 0.8 ? '9/16' : aspectRatio < 1 ? '4/5' : '1/1') : '1/1',
+                         maxHeight: '60vh',
+                         width: '100%'
                        }}>
                     <img src={image} alt="Preview" className="w-full h-full object-contain" />
                   </div>

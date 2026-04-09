@@ -197,7 +197,8 @@ export const PostCard: React.FC<PostCardProps> = React.memo(({ post, currentUser
         className="relative bg-gray-50 flex items-center justify-center overflow-hidden select-none cursor-pointer" 
         onDoubleClick={handleDoubleTap}
         style={{ 
-          aspectRatio: post.aspectRatio && post.aspectRatio < 0.8 ? '9/16' : '1/1',
+          aspectRatio: post.aspectRatio ? (post.aspectRatio < 0.8 ? '9/16' : post.aspectRatio < 1 ? '4/5' : '1/1') : '1/1',
+          width: '100%'
         }}
       >
         <img 
