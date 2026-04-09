@@ -65,6 +65,7 @@ export default function App() {
   const [adminEmail, setAdminEmail] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [following, setFollowing] = useState<string[]>([]);
+  const [isUploadingHighlight, setIsUploadingHighlight] = useState(false);
   const [followersCount, setFollowersCount] = useState<Record<string, number>>({});
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
@@ -325,7 +326,10 @@ export default function App() {
             <span>Notificaciones</span>
           </button>
           <button 
-            onClick={() => setIsUploadOpen(true)}
+            onClick={() => {
+              setIsUploadingHighlight(false);
+              setIsUploadOpen(true);
+            }}
             className="flex items-center gap-4 w-full p-3 rounded-lg hover:bg-gray-100 transition-colors text-gray-900"
           >
             <PlusSquare size={24} />
@@ -456,7 +460,10 @@ export default function App() {
             </button>
           ) : (
             <>
-              <button onClick={() => setIsUploadOpen(true)} className="text-gray-900 active:opacity-50 transition-opacity">
+              <button onClick={() => {
+                setIsUploadingHighlight(false);
+                setIsUploadOpen(true);
+              }} className="text-gray-900 active:opacity-50 transition-opacity">
                 <PlusSquare size={24} strokeWidth={2} />
               </button>
               <button className="text-gray-900 active:opacity-50 transition-opacity">
@@ -474,7 +481,7 @@ export default function App() {
           {/* Feed Section */}
           <main className="flex-1 max-w-[470px] mx-auto lg:mx-0">
             {viewMode === 'feed' && (
-              loading ? <StorySkeleton /> : <Stories onHighlightClick={setSelectedHighlight} />
+              loading ? <StorySkeleton /> : <Stories onHighlightClick={setSelectedHighlight} posts={posts} currentUserId={guestId} />
             )}
             
             {viewMode === 'profile' && (
@@ -599,7 +606,14 @@ export default function App() {
                       <div 
                         key={i} 
                         className="flex flex-col items-center gap-1 shrink-0 cursor-pointer group"
-                        onClick={() => h.img ? setSelectedHighlight(h.img) : setIsUploadOpen(true)}
+                        onClick={() => {
+                          if (h.img) {
+                            setSelectedHighlight(h.img);
+                          } else {
+                            setIsUploadingHighlight(true);
+                            setIsUploadOpen(true);
+                          }
+                        }}
                       >
                         <div className="w-16 h-16 rounded-full border-2 border-pink-500 p-0.5 flex items-center justify-center overflow-hidden bg-white group-active:scale-95 transition-transform">
                           {h.img ? (
@@ -614,7 +628,10 @@ export default function App() {
                   ) : (
                     <>
                       <div 
-                        onClick={() => setIsUploadOpen(true)}
+                        onClick={() => {
+                          setIsUploadingHighlight(true);
+                          setIsUploadOpen(true);
+                        }}
                         className="flex flex-col items-center gap-1 shrink-0 cursor-pointer group"
                       >
                         <div className="w-16 h-16 rounded-full border-2 border-pink-500 p-0.5 flex items-center justify-center overflow-hidden bg-white group-active:scale-95 transition-transform">
@@ -902,8 +919,11 @@ export default function App() {
       {/* Upload Modal */}
       <UploadModal 
         isOpen={isUploadOpen} 
-        onClose={() => setIsUploadOpen(false)} 
-        onSuccess={(photoUrl) => setGuestPhoto(photoUrl)}
+        onClose={() => {
+          setIsUploadOpen(false);
+          setIsUploadingHighlight(false);
+        }}
+        initialIsHighlight={isUploadingHighlight}
       />
 
       {/* Post Detail Modal */}

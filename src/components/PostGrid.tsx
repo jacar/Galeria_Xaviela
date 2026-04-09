@@ -1,6 +1,6 @@
 import React from 'react';
 import { Post } from '../types';
-import { Heart, MessageCircle, Trash2 } from 'lucide-react';
+import { Heart, MessageCircle, Trash2, Film } from 'lucide-react';
 
 interface PostGridProps {
   posts: Post[];
@@ -44,6 +44,13 @@ export default function PostGrid({ posts, onPostClick, onDelete, currentUserId }
             >
               <Trash2 size={14} />
             </button>
+          )}
+
+          {/* Reels Indicator */}
+          {post.aspectRatio && post.aspectRatio < 0.8 && (
+            <div className="absolute top-2 left-2 text-white drop-shadow-md z-10">
+              <Film size={18} />
+            </div>
           )}
           
           {/* Overlay on hover */}

@@ -7,25 +7,28 @@ interface UploadModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess?: (imageUrl: string) => void;
+  initialIsHighlight?: boolean;
 }
 
-export default function UploadModal({ isOpen, onClose, onSuccess }: UploadModalProps) {
+export default function UploadModal({ isOpen, onClose, onSuccess, initialIsHighlight = false }: UploadModalProps) {
   const [image, setImage] = useState<string | null>(null);
+  const [aspectRatio, setAspectRatio] = useState<number | null>(null);
   const [caption, setCaption] = useState('');
   const [guestName, setGuestName] = useState(localStorage.getItem('guest_name') || '');
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isHighlight, setIsHighlight] = useState(false);
+  const [isHighlight, setIsHighlight] = useState(initialIsHighlight);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
 
   React.useEffect(() => {
     if (isOpen) {
       setGuestName(localStorage.getItem('guest_name') || '');
+      setIsHighlight(initialIsHighlight);
     }
-  }, [isOpen]);
+  }, [isOpen, initialIsHighlight]);
 
-  const resizeImage = (file: File): Promise<string> => {
+  const resizeImage = (file: File): Promise<{ dataUrl: string; aspectRatio: number }> => {
     return new Promise((resolve) => {
       const reader = new FileReader();
       reader.onload = (e) => {
@@ -34,6 +37,7 @@ export default function UploadModal({ isOpen, onClose, onSuccess }: UploadModalP
           const canvas = document.createElement('canvas');
           let width = img.width;
           let height = img.height;
+          const aspectRatio = width / height;
 
           const MAX_DIM = 1080;
           if (width > height) {
@@ -52,7 +56,10 @@ export default function UploadModal({ isOpen, onClose, onSuccess }: UploadModalP
           canvas.height = height;
           const ctx = canvas.getContext('2d');
           ctx?.drawImage(img, 0, 0, width, height);
-          resolve(canvas.toDataURL('image/jpeg', 0.7));
+          resolve({ 
+            dataUrl: canvas.toDataURL('image/jpeg', 0.7),
+            aspectRatio
+          });
         };
         img.src = e.target?.result as string;
       };
@@ -65,8 +72,9 @@ export default function UploadModal({ isOpen, onClose, onSuccess }: UploadModalP
     if (file) {
       setError(null);
       try {
-        const resized = await resizeImage(file);
-        setImage(resized);
+        const { dataUrl, aspectRatio: ar } = await resizeImage(file);
+        setImage(dataUrl);
+        setAspectRatio(ar);
       } catch (err) {
         console.error('Error resizing image:', err);
         setError('No se pudo procesar la imagen. Intenta con otra.');
@@ -97,13 +105,15 @@ export default function UploadModal({ isOpen, onClose, onSuccess }: UploadModalP
         imageUrl: image,
         caption,
         isHighlight,
+        aspectRatio: aspectRatio || 1,
         createdAt: serverTimestamp(),
         likesCount: 0
       });
-      localStorage.setItem('guest_photo', image);
+      // REMOVED: localStorage.setItem('guest_photo', image); // Don't overwrite profile photo on every post
       if (onSuccess) onSuccess(image);
       onClose();
       setImage(null);
+      setAspectRatio(null);
       setCaption('');
       setGuestName('');
     } catch (err: any) {
@@ -194,8 +204,12 @@ export default function UploadModal({ isOpen, onClose, onSuccess }: UploadModalP
                 </div>
               ) : (
                 <div className="flex flex-col">
-                  <div className="aspect-square bg-gray-100">
-                    <img src={image} alt="Preview" className="w-full h-full object-cover" />
+                  <div className="bg-gray-100 flex items-center justify-center overflow-hidden" 
+                       style={{ 
+                         aspectRatio: aspectRatio && aspectRatio < 0.8 ? '9/16' : '1/1',
+                         maxHeight: '60vh'
+                       }}>
+                    <img src={image} alt="Preview" className="w-full h-full object-contain" />
                   </div>
 
                   <div className="p-4 pb-10 space-y-4">

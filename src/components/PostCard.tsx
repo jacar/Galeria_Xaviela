@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Heart, MessageCircle, Send, Bookmark, MoreHorizontal, Star, Trash2 } from 'lucide-react';
+import { Heart, MessageCircle, Send, Bookmark, MoreHorizontal, Star, Trash2, Film } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -193,7 +193,13 @@ export const PostCard: React.FC<PostCardProps> = React.memo(({ post, currentUser
       </AnimatePresence>
 
       {/* Image */}
-      <div className="relative aspect-square bg-gray-50 flex items-center justify-center overflow-hidden select-none cursor-pointer" onDoubleClick={handleDoubleTap}>
+      <div 
+        className="relative bg-gray-50 flex items-center justify-center overflow-hidden select-none cursor-pointer" 
+        onDoubleClick={handleDoubleTap}
+        style={{ 
+          aspectRatio: post.aspectRatio && post.aspectRatio < 0.8 ? '9/16' : '1/1',
+        }}
+      >
         <img 
           src={post.imageUrl} 
           alt="Post content" 
@@ -201,6 +207,13 @@ export const PostCard: React.FC<PostCardProps> = React.memo(({ post, currentUser
           referrerPolicy="no-referrer" 
           loading="lazy"
         />
+        
+        {/* Reels Icon for vertical posts */}
+        {post.aspectRatio && post.aspectRatio < 0.8 && (
+          <div className="absolute top-4 right-4 text-white drop-shadow-md">
+            <Film size={24} />
+          </div>
+        )}
         
         <AnimatePresence>
           {showHeartAnim && (

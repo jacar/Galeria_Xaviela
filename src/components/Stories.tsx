@@ -3,6 +3,8 @@ import { Post } from '../types';
 
 interface StoriesProps {
   onHighlightClick: (url: string) => void;
+  posts: Post[];
+  currentUserId: string;
 }
 
 const XAVIELA_HIGHLIGHTS = [
@@ -11,7 +13,9 @@ const XAVIELA_HIGHLIGHTS = [
   { label: 'Fiesta', img: 'https://webcincodev.com/xaviela/galeria/10.png' }
 ];
 
-export default function Stories({ onHighlightClick }: StoriesProps) {
+export default function Stories({ onHighlightClick, posts, currentUserId }: StoriesProps) {
+  const userHighlights = posts.filter(p => p.uid === currentUserId && p.isHighlight);
+
   return (
     <div className="flex items-center gap-4 p-4 overflow-x-auto no-scrollbar bg-white border-b border-gray-200 sm:border sm:rounded-sm mb-0 sm:mb-4 max-w-[470px] mx-auto w-full">
       {/* Your Story placeholder */}
@@ -31,7 +35,7 @@ export default function Stories({ onHighlightClick }: StoriesProps) {
 
       {XAVIELA_HIGHLIGHTS.map((h, i) => (
         <div 
-          key={i} 
+          key={`xaviela-${i}`} 
           className="flex flex-col items-center gap-1 flex-shrink-0 cursor-pointer group"
           onClick={() => onHighlightClick(h.img)}
         >
@@ -50,6 +54,31 @@ export default function Stories({ onHighlightClick }: StoriesProps) {
           </div>
           <span className="text-[11px] text-gray-900 truncate w-16 text-center font-medium">
             {h.label}
+          </span>
+        </div>
+      ))}
+
+      {userHighlights.map((post, i) => (
+        <div 
+          key={post.id} 
+          className="flex flex-col items-center gap-1 flex-shrink-0 cursor-pointer group"
+          onClick={() => onHighlightClick(post.imageUrl)}
+        >
+          <div className="p-[2.5px] rounded-full bg-pink-500 group-active:scale-95 transition-transform">
+            <div className="p-[2px] bg-white rounded-full">
+              <div className="w-14 h-14 rounded-full overflow-hidden bg-gray-100 border border-gray-200">
+                <img 
+                  src={post.imageUrl} 
+                  alt="Tus destacados" 
+                  className="w-full h-full object-cover" 
+                  referrerPolicy="no-referrer" 
+                  loading="lazy"
+                />
+              </div>
+            </div>
+          </div>
+          <span className="text-[11px] text-gray-900 truncate w-16 text-center font-medium">
+            Tuyo {i + 1}
           </span>
         </div>
       ))}
