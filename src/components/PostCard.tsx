@@ -328,14 +328,22 @@ export const PostCard: React.FC<PostCardProps> = React.memo(({ post, currentUser
         {/* Timestamp */}
         {post.createdAt && (
           <div className="text-[10px] text-gray-400 uppercase tracking-tight mt-1 mb-2">
-            HACE {formatDistanceToNow(new Date(post.createdAt), { locale: es, addSuffix: false }).toUpperCase()}
+            HACE {(() => {
+              try {
+                const date = post.createdAt?.toDate ? post.createdAt.toDate() : new Date(post.createdAt);
+                if (isNaN(date.getTime())) return 'RECIENTEMENTE';
+                return formatDistanceToNow(date, { locale: es, addSuffix: false }).toUpperCase();
+              } catch (e) {
+                return 'RECIENTEMENTE';
+              }
+            })()}
           </div>
         )}
 
         {/* Add Comment */}
         <div className="flex items-center gap-2 mt-2">
           <div className="w-6 h-6 rounded-full bg-gray-100 border border-gray-200 flex items-center justify-center text-[8px] font-bold text-gray-400">
-            {currentUserId?.charAt(6).toUpperCase()}
+            {currentUserId?.charAt(6)?.toUpperCase() || 'U'}
           </div>
           <span className="text-xs text-gray-400">Add a comment...</span>
           <div className="ml-auto flex gap-2">

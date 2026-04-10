@@ -4,8 +4,10 @@ import { getFirestore, collection, doc, setDoc, getDoc, getDocs, addDoc, updateD
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
+console.log("Firebase App Initialized: ", firebaseConfig.projectId);
+
 export const auth = getAuth(app);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+export const db = getFirestore(app);
 export const googleProvider = new GoogleAuthProvider();
 
 export { 

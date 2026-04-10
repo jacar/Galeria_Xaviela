@@ -19,6 +19,7 @@ import {
   onAuthStateChanged,
   startAfter,
   signOut,
+  serverTimestamp,
 } from './lib/firebase';
 import { Post, UserProfile } from './types';
 import { seedXavielaData } from './lib/seedData';
@@ -103,53 +104,93 @@ export default function App() {
 
   // Initialize Auth and Profile
   useEffect(() => {
-    const initAuth = async () => {
-      // 1. Sign in anonymously if no user
-      const unsubscribeAuto = onAuthStateChanged(auth, async (user) => {
-        if (user) {
-          setGuestId(user.uid);
-          localStorage.setItem('guest_id', user.uid);
+    let isMounted = true;
+    
+    // Safety timeout: 5 seconds maximum loading screen
+    const safetyTimeout = setTimeout(() => {
+      if (isMounted) {
+        console.warn("Auth initialization timed out, forcing app start.");
+        setIsInitializing(false);
+      }
+    }, 5000);
 
-          // 2. Fetch profile from Firestore
-          const userDoc = await getDoc(doc(db, 'users', user.uid));
-          if (userDoc.exists()) {
-            const data = userDoc.data() as UserProfile;
-            setGuestName(data.name);
-            setGuestPhoto(data.photo || '');
-            localStorage.setItem('guest_name', data.name);
-            if (data.photo) localStorage.setItem('guest_photo', data.photo);
-            setShowNameInput(false);
-          } else {
-            // No profile found in DB, check local storage as fallback
-            const localName = localStorage.getItem('guest_name');
-            if (localName) {
-              setGuestName(localName);
-              const localPhoto = localStorage.getItem('guest_photo') || '';
-              setGuestPhoto(localPhoto);
-              setShowNameInput(false);
-              
-              // Sync local to DB for future persistence
-              await setDoc(doc(db, 'users', user.uid), {
-                uid: user.uid,
-                name: localName,
-                photo: localPhoto,
-                createdAt: serverTimestamp()
-              });
+    const initAuth = () => {
+      try {
+        const unsubscribe = onAuthStateChanged(auth, async (user) => {
+          if (!isMounted) return;
+          console.log("Auth State Changed: ", user ? `User logged in (${user.uid})` : "No user");
+          
+          try {
+            if (user) {
+              setGuestId(user.uid);
+              localStorage.setItem('guest_id', user.uid);
+
+              // 2. Fetch profile from Firestore
+              const userDoc = await getDoc(doc(db, 'users', user.uid));
+              if (userDoc.exists()) {
+                const data = userDoc.data() as UserProfile;
+                setGuestName(data.name);
+                setGuestPhoto(data.photo || '');
+                localStorage.setItem('guest_name', data.name);
+                if (data.photo) localStorage.setItem('guest_photo', data.photo);
+                setShowNameInput(false);
+              } else {
+                const localName = localStorage.getItem('guest_name');
+                if (localName) {
+                  setGuestName(localName);
+                  const localPhoto = localStorage.getItem('guest_photo') || '';
+                  setGuestPhoto(localPhoto);
+                  setShowNameInput(false);
+                  
+                  await setDoc(doc(db, 'users', user.uid), {
+                    uid: user.uid,
+                    name: localName,
+                    photo: localPhoto,
+                    createdAt: serverTimestamp()
+                  });
+                } else {
+                  setShowNameInput(true);
+                }
+              }
             } else {
-              setShowNameInput(true);
+              console.log("Attempting anonymous sign in...");
+              await signInAnonymously(auth);
+              console.log("Anonymous sign in requested.");
+            }
+          } catch (error) {
+            console.error("Error in auth session:", error);
+          } finally {
+            if (isMounted) {
+              setIsInitializing(false);
+              clearTimeout(safetyTimeout);
             }
           }
-        } else {
-          // No user, sign in
-          await signInAnonymously(auth);
-        }
-        setIsInitializing(false);
-      });
+        }, (error) => {
+          console.error("Auth state change error:", error);
+          if (isMounted) {
+            setIsInitializing(false);
+            clearTimeout(safetyTimeout);
+          }
+        });
 
-      return () => unsubscribeAuto();
+        return unsubscribe;
+      } catch (error) {
+        console.error("Auth initialization failed:", error);
+        if (isMounted) {
+          setIsInitializing(false);
+          clearTimeout(safetyTimeout);
+        }
+        return () => {};
+      }
     };
 
-    initAuth();
+    const unsubscribe = initAuth();
+    
+    return () => {
+      isMounted = false;
+      clearTimeout(safetyTimeout);
+      if (typeof unsubscribe === 'function') unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -166,6 +207,9 @@ export default function App() {
       setPosts(postsData);
       setLastDoc(snapshot.docs[snapshot.docs.length - 1]);
       setHasMore(snapshot.docs.length === 12);
+      setLoading(false);
+    }, (error) => {
+      console.error("Posts snapshot error:", error);
       setLoading(false);
     });
 
@@ -213,6 +257,8 @@ export default function App() {
       
       setFollowing(followingList);
       setFollowersCount(counts);
+    }, (error) => {
+      console.error("Follows snapshot error:", error);
     });
 
     return () => unsubscribe();
